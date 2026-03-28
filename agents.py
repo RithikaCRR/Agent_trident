@@ -6,6 +6,7 @@ Uses Requesty.ai (OpenAI-compatible API).
 
 import json
 import requests
+from openai import OpenAI
 
 import os
 from dotenv import load_dotenv
@@ -16,49 +17,26 @@ AI_API_KEY = os.getenv("AI_API_KEY")
 AI_BASE_URL = os.getenv("AI_BASE_URL")
 MODEL = os.getenv("MODEL")
 
+# Initialize OpenAI client with Requesty/Featherless config
+client = OpenAI(
+    api_key=AI_API_KEY,
+    base_url=AI_BASE_URL
+)
+
 
 def _call_ai(system_prompt: str, user_prompt: str) -> str:
-    """Call Requesty.ai chat completions API."""
-    headers = {
-        "Authorization": f"Bearer {AI_API_KEY}",
-        "Content-Type": "application/json",
-    }
-    payload = {
-        "model": MODEL,
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ],
-        "temperature": 0.7,
-        "max_tokens": 1024,
-    }
+    """Call AI chat completions API using the OpenAI SDK."""
     try:
-        resp = requests.post(AI_BASE_URL, headers=headers, json=payload, timeout=60)
-        data = resp.json()
-
-        # Handle HTTP errors
-        if resp.status_code != 200:
-            error_msg = data.get("error", {}).get("message", f"HTTP {resp.status_code}")
-            print(f"[agents] AI API error ({resp.status_code}): {error_msg}")
-            return json.dumps({
-                "action": "HOLD",
-                "confidence": 50,
-                "reasoning": f"AI API returned error: {error_msg}. Defaulting to HOLD for safety.",
-                "key_signals": ["API error - using conservative default"]
-            })
-
-        # Validate response structure
-        if "choices" not in data or len(data["choices"]) == 0:
-            print(f"[agents] AI response missing 'choices': {json.dumps(data)[:300]}")
-            return json.dumps({
-                "action": "HOLD",
-                "confidence": 50,
-                "reasoning": "AI response was malformed. Defaulting to HOLD for safety.",
-                "key_signals": ["Malformed response - using conservative default"]
-            })
-
-        return data["choices"][0]["message"]["content"]
-
+        response = client.chat.completions.create(
+            model=MODEL,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            temperature=0.3,
+            max_tokens=800,
+        )
+        return response.choices[0].message.content
     except Exception as e:
         print(f"[agents] AI call error: {e}")
         return json.dumps({
@@ -66,6 +44,7 @@ def _call_ai(system_prompt: str, user_prompt: str) -> str:
             "confidence": 0,
             "reasoning": f"AI service error: {str(e)}"
         })
+
 
 
 def _parse_agent_response(raw: str) -> dict:
@@ -223,3 +202,21 @@ def run_full_analysis(symbol: str, stock_data: dict, indicators: dict,
             "dissenting_views": risk.get("dissenting_views", ""),
         },
     }
+
+if __name__ == "__main__":
+    import stock_data
+    symbol = "bitcoin"
+    print(f"--- Testing agents.py with {symbol} ---")
+    
+    # Fetch real data for test
+    quote = stock_data.get_quote(symbol) or {"symbol": symbol, "price": 65000}
+    intraday = stock_data.get_intraday(symbol, "5min")
+    indicators = stock_data.compute_technical_indicators(intraday) if intraday else {}
+    market_overview = stock_data.get_top_gainers_losers()
+    
+    # Run analysis
+    result = run_full_analysis(symbol, quote, indicators, market_overview, balance=10000.0)
+    
+    print("\n--- Final Output ---")
+    print(json.dumps(result, indent=2))
+

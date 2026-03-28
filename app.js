@@ -3,7 +3,7 @@
  * Handles API communication, chart rendering, and UI updates.
  */
 
-const API = "http://localhost:5000/api";
+const API = "/api";
 
 // ─── State ────────────────────────────────────────────────────────────────────
 let isRunning = false;
@@ -331,6 +331,13 @@ async function fetchStatus() {
         // Running status
         isRunning = data.running;
         updateControlsUI();
+        
+        // Ensure polling is active if running
+        if (isRunning && !pollInterval) {
+            startPolling();
+        } else if (!isRunning && pollInterval) {
+            stopPolling();
+        }
 
         // Portfolio
         if (data.portfolio) {
